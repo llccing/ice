@@ -3,7 +3,7 @@ const fs = require('fs');
 const generator = require('babel-generator').default;
 const prettier = require('prettier');
 const t = require('babel-types');
-const traverse = require('babel-traverse').default;
+const traverse = require('babel-traverse').default; // https://astexplorer.net/
 const upperCamelCase = require('uppercamelcase');
 
 const config = require('../../config');
@@ -49,17 +49,44 @@ const ROUTER_CONFIG = 'routerConfig';
 
 module.exports = async function({
   routePath,
+  routeFilePath,
   routerConfigFilePath,
   pageFolderName,
   layoutName,
 }) {
-  const routerContext = fs.readFileSync(routerConfigFilePath).toString();
-  const routerConfigAST = babylon.parse(routerContext, {
+  const routerConfigContext = fs.readFileSync(routerConfigFilePath).toString();
+  const routerConfigAST = babylon.parse(routerConfigContext, {
     sourceType: 'module',
     plugins: ['*'],
   });
 
   routePath = '/' + routePath.replace(/^\//, '') + '';
+
+  // 判断router.jsx 中是否引入routerconfig.js，如果引入则为老项目，在 routerconfig 中需要添加layout。
+  // 新项目在 routerconfig 中不添加。
+  let ifRouterConfigNeedLayout = false;
+  if (fs.existsSync(routeFilePath)) {
+    const routerContext = fs.readFileSync(routeFilePath).toString();
+    const routerAST = babylon.parse(routerContext, {
+      sourceType: 'module',
+      plugins: ['*'],
+    });
+    traverse(routerAST, {
+      ImportDeclaration({ node }) {
+        ifRouterConfigNeedLayout = node.specifiers.some((specifier) => {
+          if (t.isImportDefaultSpecifier(specifier)) {
+            if (
+              t.isIdentifier(specifier.local) &&
+              specifier.local.name == ROUTER_CONFIG
+            ) {
+              return true;
+            }
+          }
+          return false;
+        });
+      },
+    });
+  }  
 
   traverse(routerConfigAST, {
     Program() {
@@ -84,23 +111,23 @@ module.exports = async function({
           return samePath;
         });
 
+        let routeNodeConfig = {
+          path: routePath,
+          component: pageFolderName
+        };
+        if (ifRouterConfigNeedLayout) {
+          routeNodeConfig.layout = layoutName;
+        } 
+
         if (!hasPage) {
           node.init.elements.push(
-            routeNode({
-              path: routePath,
-              layout: layoutName,
-              component: pageFolderName,
-            })
+            routeNode(routeNodeConfig)
           );
         } else if (pageIndex != -1) {
           node.init.elements.splice(
             pageIndex,
             1,
-            routeNode({
-              path: routePath,
-              layout: layoutName,
-              component: pageFolderName,
-            })
+            routeNode(routeNodeConfig)
           );
         }
         node.init.elements = node.init.elements.sort((a) => {
@@ -156,7 +183,7 @@ module.exports = async function({
       })
     );
   }
-  if (!layoutImported && layoutName) {
+  if (ifRouterConfigNeedLayout && !layoutImported && layoutName) {
     appendAfterLastImport(
       routerConfigAST,
       importDefaultNode({

@@ -253,7 +253,7 @@ module.exports = async function createPage({
   /**
    * 5. 更新 routes.jsx
    */
-  let  routeFilePath = path.join(clientSrcPath, 'routes.jsx');
+  let  routeFilePath = path.join(clientSrcPath, 'router.jsx');
   const  routerConfigFilePath = path.join(clientSrcPath, 'routerConfig.js');
   const  menuConfigFilePath = path.join(clientSrcPath, 'menuConfig.js');
 
@@ -290,6 +290,7 @@ module.exports = async function createPage({
     });
     await appendRouteV4({
       routePath,
+      routeFilePath,
       routerConfigFilePath,
       pageFolderName,
       layoutName,
