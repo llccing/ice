@@ -21,19 +21,25 @@
     "ice-template",
     "ice-midway-template"
   ],
+<<<<<<< HEAD
   "author": {
     "name": "ICE Team",
     "email": "ice-admin@alibaba-inc.com"
   },
+=======
+>>>>>>> master
   "license": "MIT",
   "publishConfig": {
     "registry": "http://registry.npmjs.com",
     "access": "public"
   },
+<<<<<<< HEAD
   "repository": {
     "type": "git",
     "url": "https://github.com/alibaba/ice"
   },
+=======
+>>>>>>> master
   "engines": {
     "node": ">=8.0.0"
   }
