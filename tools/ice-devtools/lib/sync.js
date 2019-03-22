@@ -2,11 +2,12 @@ const debug = require('debug')('ice:sync');
 const chalk = require('chalk');
 const rp = require('request-promise-native');
 const ora = require('ora');
+const inquirer = require('inquirer');
 const getDB = require('../utils/db');
 const tokenUtil = require('../utils/token');
-const siteUtil = require('../utils/site');
-const getUrl = require('../utils/url');
-
+const innerNet = require('../utils/inner-net');
+const pkgJSON = require('../utils/pkg-json');
+let fusionDesignUrl;
 /**
  * 上传数据
  * @param {Object} datas
@@ -24,10 +25,10 @@ async function requestUrl(data, token, url) {
     json: true,
     body: data,
   });
-  if (res.success === false && Array.isArray(res.data.fail)) {
-    res.data.fail.forEach((fail) =>
+  if (res.success === false &&  Array.isArray(res.data)) {
+    res.data.forEach((fail) =>
       console.log(
-        chalk.yellow(`物料${fail.name}入库失败, 原因: ${fail.reason}`)
+        chalk.yellow(`物料${fail.npm}入库失败, 原因: ${fail.reason}`)
       )
     );
   }
@@ -40,24 +41,23 @@ async function requestUrl(data, token, url) {
  * @param {Object} site
  */
 async function uploadData(datas, token, site) {
-  const baseUrl = getUrl().fusionDesignUrl;
+  const baseUrl = fusionDesignUrl;
   const url = `${baseUrl}/api/v1/sites/${site.id}/materials`;
 
-  const spinner = ora('Sync to https://fusion.design, Now: 0%').start();
+  const spinner = ora(`Sync to ${baseUrl}, Now: 0%`).start();
 
   try {
     for (let index = 0; index < datas.length; index++) {
       const data = datas[index];
+
       await requestUrl(data, token, url);
       const percent = Math.ceil(((index + 1) / datas.length) * 100);
       debug('index: %s, length: %s, percent: %s', index, datas.length, percent);
-      spinner.text = `Sync to https://fusion.design, Now: ${chalk.green(
+      spinner.text = `Sync to ${baseUrl}, Now: ${chalk.green(
         percent + '%'
       )}`;
     }
-    spinner.succeed(
-      '已经通知 https://fusion.design 入库物料,入库速度约 5个物料每分钟'
-    );
+    spinner.succeed(`已经通知 ${baseUrl} 入库物料, 入库为耗时操作, 请耐心等待`);
   } catch (error) {
     spinner.fail('入库失败, please try icedev --help');
     debug('sync error: %o', error);
@@ -81,7 +81,12 @@ function dbReshape(db) {
     version: source.version,
     type: 'scaffold',
   }));
-  const all = blocks.concat(scaffolds);
+  const components = Array.isArray(db.components) ? db.components.map(({ source }) => ({
+    name: source.npm,
+    version: source.version,
+    type: 'comp',
+  })) : [];
+  const all = blocks.concat(scaffolds, components);
   debug('all : %j', all);
   const datas = [];
   const ONCE_LIMIT = 4; // 20个一批 太多了服务器受不了
@@ -89,6 +94,7 @@ function dbReshape(db) {
     const data = {
       blocks: [],
       scaffolds: [],
+      components: [],
     };
     for (let j = 0; j < ONCE_LIMIT && i + j < all.length; j++) {
       const element = all[i + j];
@@ -99,9 +105,11 @@ function dbReshape(db) {
         data.blocks.push(fullName);
       } else if (type === 'scaffold') {
         data.scaffolds.push(fullName);
+      } else if (type === 'comp') {
+        data.components.push(fullName)
       }
     }
-    if (data.blocks.length || data.scaffolds.length) {
+    if (data.blocks.length || data.scaffolds.length || data.components.length) {
       datas.push(data);
     }
   }
@@ -109,6 +117,35 @@ function dbReshape(db) {
   return datas;
 }
 module.exports = async function sync(cwd, opt) {
+  const isInnerNet = await innerNet.isInnerNet();
+  let innerSync = false;
+  if (isInnerNet) {
+    const {inner} = await inquirer.prompt([
+      {
+        type: 'confirm',
+        message: '您正处于内网环境,请问是否需要同步到内部站点',
+        name: 'inner',
+      },
+    ]);
+    debug('sync-ali: %s', inner);
+    innerSync = inner;
+  }
+
+  const { name: pkgname} = pkgJSON.getPkgJSON(cwd);
+  if (innerNet.isTnpm(pkgname) && !innerSync) {
+    console.log(chalk.red(`${pkgname} 为内网项目, 禁止同步到外网`));
+    return;
+  }
+
+  let siteUtil;
+  if (innerSync) {
+    siteUtil = require('../utils/inner-site');
+    fusionDesignUrl = require('../utils/inner-url')().fusionDesignUrl;
+  } else {
+    siteUtil = require('../utils/site');
+    fusionDesignUrl = require('../utils/url')().fusionDesignUrl;
+  }
+
   const db = await getDB(cwd);
   if (!db) {
     return;

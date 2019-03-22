@@ -2,11 +2,24 @@ const util = require('util');
 const marked = require('marked');
 const prismjs = require('prismjs');
 require('prismjs/components/prism-jsx');
+require('prismjs/components/prism-bash');
+require('prismjs/components/prism-json');
+
 const yaml = require('js-yaml');
 
 const compileES5 = require('./compile-es5');
 
 const renderer = new marked.Renderer();
+
+const LANGS = [
+  'css',
+  'style',
+  'bash',
+  'json',
+  'jsx',
+  'js',
+  'html'
+];
 
 var styleTemplate = `
   <div class="markdown">
@@ -17,10 +30,14 @@ var styleTemplate = `
   <style>%s</style>
 `;
 
-renderer.code = function (code, lang = 'jsx') {
-  var html = prismjs.highlight(code, prismjs.languages[lang]);
+renderer.code = function (code, lang) {
+  // lang = ''
+  if (!lang) {
+    lang = 'jsx';
+  }
 
-  if (lang === 'css' || lang === 'style') {
+  var html = prismjs.highlight(code, prismjs.languages[lang]);
+  if (LANGS.indexOf(lang) > -1) {
     return util.format(styleTemplate, lang, lang, html, code);
   }
 
@@ -60,7 +77,7 @@ exports.formatMarkdown = function formatMarkdown(md) {
   return markdownHtml;
 }
 
-exports.parseMarkdownParts = function parseMarkdownParts(md) {
+exports.parseMarkdownParts = function parseMarkdownParts(md, options = {}) {
   // 获取 meta 信息
   function split(str) {
     if (str.slice(0, 3) !== '---') return;
@@ -72,7 +89,7 @@ exports.parseMarkdownParts = function parseMarkdownParts(md) {
   const splited = split(md);
   const result = {
     meta: {},
-    content: '',
+    content: md,
     code: ''
   };
 
@@ -81,16 +98,20 @@ exports.parseMarkdownParts = function parseMarkdownParts(md) {
     result.content = splited[1];
   }
 
-  const CODE_REG = /(````)(?:jsx?)([^\1]*?)(\1)/g;
-  const codeMatched = CODE_REG.exec(result.content);
-  if (codeMatched) {
-    result.code = codeMatched[2] || '';
-    result.content = result.content.slice(0, codeMatched.index);
+  if (options.sliceCode) {
+    const CODE_REG = /(````)(?:jsx?)([^\1]*?)(\1)/g;
+
+    const codeMatched = CODE_REG.exec(result.content);
+    if (codeMatched) {
+      result.code = codeMatched[2] || '';
+      result.content = result.content.slice(0, codeMatched.index);
+    }
+
+    result.highlightedCode = prismjs.highlight(result.code.trim(), prismjs.languages.jsx);
+    result.compiledCode = compileES5(result.code);
   }
 
   result.content = marked(result.content);
-  result.highlightedCode = prismjs.highlight(result.code.trim(), prismjs.languages.jsx);
-  result.compiledCode = compileES5(result.code);
 
   return result;
 }

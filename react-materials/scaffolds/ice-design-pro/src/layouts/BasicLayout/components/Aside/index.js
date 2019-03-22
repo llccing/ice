@@ -1,13 +1,14 @@
 import React, { Component } from 'react';
+import cx from 'classnames';
+import FoundationSymbol from '@icedesign/foundation-symbol';
 import { Link } from 'react-router-dom';
 import { withRouter } from 'react-router';
-import cx from 'classnames';
-import { Icon, Nav } from '@alifd/next';
+import { Nav } from '@alifd/next';
+import { FormattedMessage } from 'react-intl';
 
 import Logo from '../Logo';
 import { asideMenuConfig } from '../../../../menuConfig';
 import Authorized from '../../../../utils/Authorized';
-
 import './index.scss';
 
 const SubNav = Nav.SubNav;
@@ -24,6 +25,7 @@ export default class Aside extends Component {
 
     const openKeys = this.getDefaultOpenKeys();
     this.state = {
+      collapse: false,
       openDrawer: false,
       openKeys,
     };
@@ -42,9 +44,19 @@ export default class Aside extends Component {
   };
 
   /**
+   * 折叠搜索切换
+   */
+  toggleCollapse = () => {
+    const { collapse } = this.state;
+    this.setState({
+      collapse: !collapse,
+    });
+  };
+
+  /**
    * 左侧菜单收缩切换
    */
-  onMenuClick = () => {
+  onSelect = () => {
     this.toggleMenu();
   };
 
@@ -74,6 +86,7 @@ export default class Aside extends Component {
   onOpenChange = (openKeys) => {
     this.setState({
       openKeys,
+      openDrawer: false,
     });
     this.openKeysCache = openKeys;
   };
@@ -96,6 +109,14 @@ export default class Aside extends Component {
   };
 
   /**
+   * menuConfig.js 的 name 属性和 locals/menu.js 的 key 进行对应
+   * 在这里进行转换 path: '/chart/basic' => 'app.menu.chart.basic'
+   */
+  getLocaleKey = (item) => {
+    return `app.menu${item.path.replace(/\//g, '.')}`;
+  };
+
+  /**
    * 二级导航
    */
   getSubMenuOrItem = (item, index) => {
@@ -106,8 +127,16 @@ export default class Aside extends Component {
         return (
           <SubNav
             key={index}
-            icon={item.icon ? <Icon size="small" type={item.icon} /> : null}
-            label={<span className="ice-menu-collapse-hide">{item.name}</span>}
+            icon={
+              item.icon ? (
+                <FoundationSymbol size="small" type={item.icon} />
+              ) : null
+            }
+            label={
+              <span className="ice-menu-collapse-hide">
+                <FormattedMessage id={this.getLocaleKey(item)} />
+              </span>
+            }
           >
             {childrenItems}
           </SubNav>
@@ -117,7 +146,9 @@ export default class Aside extends Component {
     }
     return (
       <NavItem key={item.path}>
-        <Link to={item.path}>{item.name}</Link>
+        <Link to={item.path}>
+          <FormattedMessage id={this.getLocaleKey(item)} />
+        </Link>
       </NavItem>
     );
   };
@@ -135,33 +166,48 @@ export default class Aside extends Component {
   };
 
   render() {
-    const { openDrawer } = this.state;
     const {
       location: { pathname },
       isMobile,
     } = this.props;
 
+    const { openDrawer, collapse } = this.state;
+
     return (
       <div
-        className={cx('ice-design-layout-aside', { 'open-drawer': openDrawer })}
+        className={cx('ice-design-layout-aside', {
+          'open-drawer': openDrawer,
+        })}
       >
         {isMobile && <Logo />}
 
         {isMobile && !openDrawer && (
           <a className="menu-btn" onClick={this.toggleMenu}>
-            <Icon type="calendar" size="small" />
+            <FoundationSymbol type="menu" size="small" />
+          </a>
+        )}
+
+        {!isMobile && (
+          <a className="collapse-btn" onClick={this.toggleCollapse}>
+            <FoundationSymbol
+              key={collapse}
+              type={collapse ? 'transfer-right' : 'transfer-left'}
+              size="large"
+            />
           </a>
         )}
 
         <Nav
-          style={{ width: 200 }}
-          direction="ver"
+          style={{ width: collapse ? 60 : 200 }}
+          mode={collapse ? 'popup' : 'inline'}
+          iconOnly={collapse}
+          hasArrow={!collapse}
           activeDirection={null}
           selectedKeys={[pathname]}
           openKeys={this.state.openKeys}
           defaultSelectedKeys={[pathname]}
           onOpen={this.onOpenChange}
-          onClick={this.onMenuClick}
+          onSelect={this.onSelect}
         >
           {this.getNavMenuItems(asideMenuConfig)}
         </Nav>

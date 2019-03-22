@@ -4,14 +4,19 @@ const path = require('path');
 const chalk = require('chalk');
 
 const BABEL_LOADER = require.resolve('babel-loader');
-const STYLE_LOADER = require.resolve('style-loader');
 const CSS_LOADER = require.resolve('css-loader');
 const SASS_LOADER = require.resolve('sass-loader');
+const LESS_LOADER = require.resolve('less-loader');
 const HANDLEBARS_LOADER = require.resolve('handlebars-loader');
 const ICE_SKIN_LOADER = require.resolve('ice-skin-loader');
+const AWESOME_TYPESCRIPT_LOADER = require.resolve('awesome-typescript-loader');
 const WEBPACK_HOT_CLIENT = require.resolve('webpack-hot-client/client');
 const SimpleProgressPlugin = require('webpack-simple-progress-plugin');
 const WebpackPluginImport = require('webpack-plugin-import');
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const OptimizeCSSAssetsPlugin = require.resolve('optimize-css-assets-webpack-plugin');
+const UglifyJsPlugin = require.resolve('uglifyjs-webpack-plugin');
 
 const getBabelConfig = require('./getBabelConfig');
 const { getPkgJSON } = require('../utils/pkg-json');
@@ -22,33 +27,52 @@ const URL_LOADER_LIMIT = 8192;
 
 module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
   const config = new WebpackConfig();
+
   config
-    .mode(process.env.NODE_ENV === 'production' ? 'production' : 'development')
-    .externals({
-      react: 'React',
-      'react-dom': 'ReactDOM',
-    });
+    .mode(process.env.NODE_ENV === 'production' ? 'production' : 'development');
+
+  const pkgJSON = getPkgJSON(cwd);
+  const { buildConfig = {}, themeConfig = {} } = pkgJSON;
+  const babelConfig = getBabelConfig(buildConfig);
 
   config.module
     .rule('babel')
     .test(/\.jsx?$/)
+    .exclude
+      .add(/node_modules/)
+      .end()
     .use('babel')
     .loader(BABEL_LOADER)
-    .options(getBabelConfig())
+    .options(babelConfig)
+    .end();
+
+  config.module
+    .rule('typescript')
+    .test(/\.tsx?$/)
+    .exclude
+      .add(/node_modules/)
+      .end()
+    .use('babel')
+    .loader(BABEL_LOADER)
+    .options(babelConfig)
+    .end()
+    .use('typescript')
+    .loader(AWESOME_TYPESCRIPT_LOADER)
+    .options({
+      useCache: false,
+    })
     .end();
 
   config.module
     .rule('css')
     .test(/\.css$/)
     .use('style')
-    .loader(STYLE_LOADER)
+    .loader(MiniCssExtractPlugin.loader)
     .end()
     .use('css')
     .loader(CSS_LOADER)
     .end();
 
-  const pkgJSON = getPkgJSON(cwd);
-  const { buildConfig = {}, themeConfig = {} } = pkgJSON;
   const theme = buildConfig.theme || buildConfig.themePackage;
 
   if (theme) {
@@ -65,7 +89,7 @@ module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
     .exclude.add(/\.module\.scss$/)
     .end()
     .use('style-loader')
-    .loader(STYLE_LOADER)
+    .loader(MiniCssExtractPlugin.loader)
     .end()
     .use('css-loader')
     .loader(CSS_LOADER)
@@ -81,10 +105,28 @@ module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
     })
     .end();
 
+    config.module
+    .rule('less')
+    .test(/\.less$/)
+    .exclude.add(/\.module\.less$/)
+    .end()
+    .use('style-loader')
+    .loader(MiniCssExtractPlugin.loader)
+    .end()
+    .use('css-loader')
+    .loader(CSS_LOADER)
+    .end()
+    .use('less-loader')
+    .loader(LESS_LOADER)
+    .options({
+      javascriptEnabled: true
+    })
+    .end();
+
   config.module
     .rule('cssmodule')
     .use('style-loader')
-    .loader(STYLE_LOADER)
+    .loader(MiniCssExtractPlugin.loader)
     .end()
     .test(/\.module\.scss$/)
     .use('css-loader')
@@ -177,7 +219,9 @@ module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
   config.resolve.extensions
     .add('.js')
     .add('.jsx')
-    .add('.json');
+    .add('.json')
+    .add('.ts')
+    .add('.tsx');
 
   config.plugin('progress').use(SimpleProgressPlugin);
 
@@ -185,6 +229,13 @@ module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
     {
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
     },
+  ]);
+
+  config.plugin('css').use(MiniCssExtractPlugin, [
+    {
+      filename: "[name].css",
+      chunkFilename: "[id].css"
+    }
   ]);
 
   config.plugin('import').use(WebpackPluginImport, [
@@ -196,6 +247,11 @@ module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
     }),
   ]);
 
+  // 依赖分析
+  if (process.env.ANALYZER) {
+    config.plugin('analyzer').use(BundleAnalyzerPlugin);
+  }
+
   config.plugin('hot').use(webpack.HotModuleReplacementPlugin);
   Object.entries(entries).forEach((entry) => {
     const [key, val] = entry;
@@ -206,6 +262,31 @@ module.exports = function getWebpackBaseConfig(cwd, entries = {}) {
     .path(cwd)
     .filename('[name].js')
     .publicPath('./');
+
+  config.optimization
+    .minimize(process.env.NODE_ENV === 'production')
+    .minimizer('js')
+    .use(UglifyJsPlugin, [{
+      cache: true,
+      parallel: true,
+      uglifyOptions: {
+        compress: {
+          unused: false,
+          warnings: false,
+        },
+        output: {
+          ascii_only: true,
+          comments: 'some',
+          beautify: false,
+        },
+        mangle: true,
+      },
+    }])
+    .end()
+    .minimizer('css')
+    .use(OptimizeCSSAssetsPlugin, [{
+      cssProcessorOptions: { safe: true }
+    }]);
 
   return config;
 };

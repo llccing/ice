@@ -12,10 +12,25 @@ module.exports = function getDemos(projectDir) {
   return readdirSync(demoPath)
     .filter(file => /\.md$/.test(file))
     .map((filename) => {
-      const content = readFileSync(join(demoPath, filename), 'utf-8');
-      const { meta } = parseMarkdownParts(content);
+      const filePath = join(demoPath, filename);
+      const content = readFileSync(filePath, 'utf-8');
+
+      const { meta, highlightedCode, content: markdownContent } = parseMarkdownParts(content, {
+        sliceCode: true
+      });
+
       filename = filename.replace(/\.md$/, '');
       const href = `/preview/?demo=${filename}`;
-      return { href, filename, ...meta };
+
+      return { 
+        href, 
+        filename, 
+        filePath, 
+        ...meta, 
+        highlightedCode, 
+        markdownContent, 
+      };
+    }).sort(function (a, b) {
+      return a.order - b.order;
     });
 };

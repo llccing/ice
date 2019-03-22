@@ -1,11 +1,13 @@
 const { differenceWith } = require('lodash');
 const webpackMerge = require('webpack-merge');
+const path = require('path');
 
 const getUserConfig = require('./getUserConfig');
 const getRules = require('./getRules');
 const getPlugins = require('./getPlugins');
 const processEntry = require('./processEntry');
 const getEntryByPages = require('./getEntryByPages');
+const getResolveAlias = require('./getResolveAlias');
 const pkg = require('./packageJson');
 const checkTemplateHasReact = require('../utils/checkTemplateHasReact');
 const debug = require('../debug');
@@ -43,7 +45,19 @@ const pluginsUnique = (uniques) => {
 module.exports = function getWebpackConfigBasic({ entry, buildConfig = {} }) {
   const { themeConfig = {} } = pkg;
   const hasExternalReact = checkTemplateHasReact(paths.appHtml);
+
+  if (buildConfig.output && buildConfig.output.path) {
+    buildConfig.output.path = path.resolve(paths.appDirectory, buildConfig.output.path);
+  }
+
+  buildConfig.outputAssetsPath = {
+    css: 'css',
+    js: 'js',
+    ...buildConfig.outputAssetsPath
+  };
+
   debug.info('hasExternalReact', hasExternalReact);
+
   const webpackConfig = {
     mode: process.env.NODE_ENV,
     context: paths.appDirectory,
@@ -51,23 +65,24 @@ module.exports = function getWebpackConfigBasic({ entry, buildConfig = {} }) {
     output: Object.assign(
       {
         path: paths.appBuild,
-        filename: process.env.HASH ? 'js/[name].[hash:6].js' : 'js/[name].js',
+        filename: path.join(buildConfig.outputAssetsPath.js || '', (process.env.HASH ? '[name].[hash:6].js' : '[name].js')),
         publicPath: paths.servedPath,
       },
       buildConfig.output || {}
     ),
     resolve: {
-      modules: [paths.appNodeModules, 'node_modules'],
-      extensions: ['.js', '.jsx', '.json', '.html'],
+      modules: ['node_modules', paths.appNodeModules],
+      extensions: ['.js', '.jsx', '.json', '.html', '.ts', '.tsx'],
+      alias: getResolveAlias(buildConfig),
     },
-    externals:
-      buildConfig.externals || hasExternalReact
-        ? { react: 'window.React', 'react-dom': 'window.ReactDOM' }
-        : {},
+    externals: {
+      ...(hasExternalReact ? { react: 'window.React', 'react-dom': 'window.ReactDOM' } : {}),
+      ...buildConfig.externals,
+    },
     module: {
       rules: getRules(buildConfig, themeConfig),
     },
-    plugins: getPlugins({ entry, buildConfig, themeConfig }),
+    plugins: getPlugins({ entry, buildConfig, themeConfig, pkg }),
     optimization: {
       splitChunks: {
         cacheGroups: {
